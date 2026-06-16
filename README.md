@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=200&section=header&text=JassMusic&fontSize=80&fontColor=fff&animation=twinkling&fontAlignY=36&desc=Premium%20Telegram%20Voice%20Chat%20Music%20Bot&descAlignY=62&descAlign=50" width="100%"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=200&section=header&text=Xenora&fontSize=80&fontColor=fff&animation=twinkling&fontAlignY=36&desc=Premium%20Telegram%20Voice%20Chat%20Music%20Bot&descAlignY=62&descAlign=50" width="100%"/>
 
 <br>
 
@@ -138,7 +138,7 @@ OWNER_ID=your_telegram_user_id
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/jaskrninlove/jassmusic.git
+git clone https://github.com/jaskrninlove/xenora.git
 cd jass
 
 # 2. Install dependencies
@@ -216,7 +216,7 @@ See the [LICENSE](LICENSE) file for full terms.
 
 <div align="center">
 
-**Developed & maintained by [Jass (Jaskaran Singh)](https://github.com/jaskrninlove)**
+**Developed & maintained by [Jass](https://github.com/jaskrninlove)**
 
 © 2026 Jass · All Rights Reserved
 
