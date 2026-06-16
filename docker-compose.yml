@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  jass:
+    build: .
+    container_name: jass_music_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./downloads:/app/downloads
+      - ./cookies.txt:/app/cookies.txt  # optional
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:7
+    container_name: jass_mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+volumes:
+  mongo_data:

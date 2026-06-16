@@ -1,0 +1,11 @@
+kurigram
+TgCrypto
+py-tgcalls==2.2.5
+ntgcalls
+yt-dlp
+motor
+python-dotenv
+aiohttp
+psutil
+spotipy
+dnspython
