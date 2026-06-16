@@ -216,7 +216,7 @@ See the [LICENSE](LICENSE) file for full terms.
 
 <div align="center">
 
-**Developed & maintained by [Jass (Jaskaran Singh)](https://github.com/jaskrninlove)**
+**Developed & maintained by [Jass](https://github.com/jaskrninlove)**
 
 © 2026 Jass · All Rights Reserved
 
