@@ -24,6 +24,7 @@ BASE_OPTS = {
     "extract_flat": False,
     "ignoreerrors": True,
     "source_address": "0.0.0.0",
+    "cookiefile": "cookies/cookies.txt",
 }
 
 
