@@ -23,7 +23,9 @@ from ..config import config
 from ..core.database import db
 from ..core.player import START_TIME, active
 from ..core.logger import start_command_log, action_log, error_log
-
+import os
+import random
+from pathlib import Path
 
 HELP = {
     "main": """<blockquote><b>🎧 Help Center</b></blockquote>
@@ -186,6 +188,36 @@ def uptime():
     s_rem = s % 60
     return f"{h}h {m}m {s_rem}s"
 
+BASE_DIR = Path("assets")
+
+def get_random_start_media():
+    gifs_dir = BASE_DIR / "gifs"
+    images_dir = BASE_DIR / "images"
+
+    gifs = []
+    images = []
+
+    if gifs_dir.exists():
+        gifs = [
+            str(gifs_dir / f)
+            for f in os.listdir(gifs_dir)
+            if f.lower().endswith((".gif", ".mp4"))
+        ]
+
+    if images_dir.exists():
+        images = [
+            str(images_dir / f)
+            for f in os.listdir(images_dir)
+            if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))
+        ]
+
+    if gifs:
+        return random.choice(gifs), "gif"
+
+    if images:
+        return random.choice(images), "image"
+
+    return None, None
 
 def start_caption(mention: str, bot_name: str):
     return f"""
@@ -214,17 +246,38 @@ def register(app, call):
             await start_command_log(message)
 
             if message.chat.type.name in ["GROUP", "SUPERGROUP"]:
-             await db.add_chat(message.chat.id, message.chat.title or "")
+                await db.add_chat(message.chat.id, message.chat.title or "")
 
             me = await client.get_me()
-            bot_name = me.first_name or "{bot_name}"
+            bot_name = me.first_name or "Music Bot"
             mention = message.from_user.mention if message.from_user else "there"
+
             if message.chat.type.name in ["GROUP", "SUPERGROUP"]:
                 text = group_start_caption(bot_name)
                 buttons = group_start_buttons(me.username)
             else:
                 text = start_caption(mention, bot_name)
                 buttons = start_buttons(me.username)
+
+            media, media_type = get_random_start_media()
+
+            if media:
+                try:
+                    if media_type == "gif":
+                        await message.reply_animation(
+                            animation=media,
+                            caption=text,
+                            reply_markup=buttons,
+                        )
+                    else:
+                        await message.reply_photo(
+                            photo=media,
+                            caption=text,
+                            reply_markup=buttons,
+                        )
+                    return
+                except Exception:
+                    pass
 
             if config.START_IMG:
                 try:
@@ -233,16 +286,14 @@ def register(app, call):
                         caption=text,
                         reply_markup=buttons,
                     )
+                    return
                 except Exception:
-                    await message.reply_text(
-                        text,
-                        reply_markup=buttons,
-                    )
-            else:
-                await message.reply_text(
-                    text,
-                    reply_markup=buttons,
-                )
+                    pass
+
+            await message.reply_text(
+                text,
+                reply_markup=buttons,
+            )
 
         except Exception as e:
             await error_log("Start Command", e)
