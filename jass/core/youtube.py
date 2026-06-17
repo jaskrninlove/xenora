@@ -1,12 +1,11 @@
-import os
-import re
-import random
-import asyncio
-from pathlib import Path
 from dataclasses import dataclass
+import asyncio
+import re
+from urllib.parse import quote_plus
 
-import yt_dlp
-from py_yt import VideosSearch
+import aiohttp
+
+from ..config import config
 
 
 @dataclass
@@ -19,160 +18,151 @@ class Track:
     is_video: bool = False
 
 
-COOKIE_DIR = Path("cookies")
-DOWNLOAD_DIR = Path("downloads")
-COOKIE_DIR.mkdir(exist_ok=True)
-DOWNLOAD_DIR.mkdir(exist_ok=True)
-
-YT_ID_RE = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})")
+SPOTIFY_TRACK_RE = re.compile(r"(?:spotify\.com/track/|spotify:track:)([A-Za-z0-9]+)")
 
 
-def get_cookie():
-    cookies = list(COOKIE_DIR.glob("*.txt"))
-    return str(random.choice(cookies)) if cookies else None
-
-
-def get_video_id(text: str):
-    m = YT_ID_RE.search(text or "")
-    return m.group(1) if m else None
-
-
-def to_seconds(duration):
-    if not duration:
-        return 0
+def _duration(value):
     try:
-        p = [int(x) for x in str(duration).split(":")]
-        if len(p) == 3:
-            return p[0] * 3600 + p[1] * 60 + p[2]
-        if len(p) == 2:
-            return p[0] * 60 + p[1]
-        return p[0]
+        return int(value or 0)
     except Exception:
         return 0
 
 
-def find_file(video_id: str, video: bool):
-    exts = [".mp4", ".webm", ".mkv"] if video else [".webm", ".m4a", ".mp3", ".opus"]
-    for ext in exts:
-        p = DOWNLOAD_DIR / f"{video_id}{ext}"
-        if p.exists() and p.stat().st_size > 0:
-            return str(p)
-    return None
+def _best_image(images):
+    if not images:
+        return ""
+    if isinstance(images, list):
+        last = images[-1]
+        if isinstance(last, dict):
+            return last.get("url", "")
+        return str(last)
+    return ""
 
 
-def search_youtube(query: str):
-    vid = get_video_id(query)
-    if vid:
-        return {
-            "id": vid,
-            "title": f"YouTube Video {vid}",
-            "link": f"https://www.youtube.com/watch?v={vid}",
-            "duration": None,
-            "thumbnail": "",
-        }
+def _best_download(downloads):
+    if not downloads:
+        return ""
 
-    try:
-        s = VideosSearch(query, limit=5, with_live=False)
-        r = asyncio.run(s.next())
+    if isinstance(downloads, list):
+        for q in ("320kbps", "320", "160kbps", "160", "96kbps", "96"):
+            for item in downloads:
+                if not isinstance(item, dict):
+                    continue
+                quality = str(item.get("quality", "")).lower()
+                url = item.get("url", "")
+                if q.lower() in quality and url:
+                    return url
 
-        for item in r.get("result", []):
-            vid = item.get("id")
-            if not vid:
-                continue
+        for item in reversed(downloads):
+            if isinstance(item, dict) and item.get("url"):
+                return item["url"]
 
-            thumbs = item.get("thumbnails") or []
-            thumb = thumbs[-1].get("url", "") if thumbs else ""
+    if isinstance(downloads, str):
+        return downloads
 
-            return {
-                "id": vid,
-                "title": item.get("title") or f"YouTube Video {vid}",
-                "link": item.get("link") or f"https://www.youtube.com/watch?v={vid}",
-                "duration": item.get("duration"),
-                "thumbnail": thumb.split("?")[0] if thumb else "",
-            }
-    except Exception as e:
-        print("YouTube search failed:", e)
-
-    return None
+    return ""
 
 
-def ydl_opts(video: bool, cookie=None):
-    opts = {
-        "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "geo_bypass": True,
-        "nocheckcertificate": True,
-        "cachedir": False,
-        "overwrites": False,
-        "ignoreerrors": False,
-        "retries": 10,
-        "fragment_retries": 10,
-        "continuedl": True,
-        "socket_timeout": 30,
-        "format": "best" if video else "bestaudio/best",
-    }
+async def _spotify_token(session):
+    if not config.SPOTIFY_CLIENT_ID or not config.SPOTIFY_CLIENT_SECRET:
+        return None
 
-    if video:
-        opts["merge_output_format"] = "mp4"
-
-    if cookie:
-        opts["cookiefile"] = cookie
-
-    return opts
+    async with session.post(
+        "https://accounts.spotify.com/api/token",
+        data={"grant_type": "client_credentials"},
+        auth=aiohttp.BasicAuth(
+            config.SPOTIFY_CLIENT_ID,
+            config.SPOTIFY_CLIENT_SECRET,
+        ),
+        timeout=20,
+    ) as resp:
+        if resp.status != 200:
+            return None
+        data = await resp.json()
+        return data.get("access_token")
 
 
-def download(video_id: str, video: bool):
-    cached = find_file(video_id, video)
-    if cached:
-        return cached
+async def _spotify_to_query(query: str):
+    match = SPOTIFY_TRACK_RE.search(query)
+    if not match:
+        return query
 
-    url = f"https://www.youtube.com/watch?v={video_id}"
+    track_id = match.group(1)
 
-    cookies = list(COOKIE_DIR.glob("*.txt"))
-    random.shuffle(cookies)
-    cookie_list = [str(c) for c in cookies] or [None]
+    async with aiohttp.ClientSession() as session:
+        token = await _spotify_token(session)
+        if not token:
+            return query
 
-    last_error = None
+        async with session.get(
+            f"https://api.spotify.com/v1/tracks/{track_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=20,
+        ) as resp:
+            if resp.status != 200:
+                return query
 
-    for cookie in cookie_list:
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts(video, cookie)) as ydl:
-                ydl.download([url])
-
-            cached = find_file(video_id, video)
-            if cached:
-                return cached
-
-        except Exception as e:
-            last_error = e
-            continue
-
-    raise Exception(f"YouTube download failed: {last_error}")
+            data = await resp.json()
+            name = data.get("name", "")
+            artists = ", ".join(a.get("name", "") for a in data.get("artists", []))
+            return f"{name} {artists}".strip() or query
 
 
-def _extract(query: str, video: bool = False):
-    data = search_youtube(query)
+async def _saavn_search(query: str):
+    base = config.SAAVN_API_URL.rstrip("/")
+    url = f"{base}/search/songs?query={quote_plus(query)}&limit=1"
 
-    if not data:
-        raise Exception("No YouTube result found. Try direct YouTube link.")
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=30) as resp:
+            if resp.status != 200:
+                raise Exception("JioSaavn API search failed.")
+            data = await resp.json()
 
-    video_id = data["id"]
-    file_path = download(video_id, video)
+        results = (
+            data.get("data", {}).get("results")
+            or data.get("results")
+            or []
+        )
 
-    if not file_path or not os.path.exists(file_path):
-        raise Exception("Download failed.")
+        if not results:
+            raise Exception("No song found on JioSaavn.")
 
-    return Track(
-        title=data.get("title") or f"YouTube Video {video_id}",
-        url=file_path,
-        webpage_url=data.get("link") or f"https://www.youtube.com/watch?v={video_id}",
-        duration=to_seconds(data.get("duration")),
-        thumbnail=data.get("thumbnail") or "",
-        is_video=video,
-    )
+        song = results[0]
+        song_id = song.get("id")
+
+        if song_id and not song.get("downloadUrl"):
+            detail_url = f"{base}/songs?id={song_id}"
+            async with session.get(detail_url, timeout=30) as resp:
+                if resp.status == 200:
+                    detail = await resp.json()
+                    detail_data = detail.get("data")
+                    if isinstance(detail_data, list) and detail_data:
+                        song = detail_data[0]
+                    elif isinstance(detail_data, dict):
+                        song = detail_data
+
+        audio_url = _best_download(song.get("downloadUrl") or song.get("download_url"))
+
+        if not audio_url:
+            raise Exception("Song found, but no playable audio URL returned.")
+
+        title = song.get("name") or song.get("title") or "Unknown Track"
+        artists = song.get("primaryArtists") or song.get("primary_artists") or ""
+        if isinstance(artists, list):
+            artists = ", ".join(a.get("name", "") for a in artists if isinstance(a, dict))
+
+        full_title = f"{title} - {artists}".strip(" -")
+
+        return Track(
+            title=full_title,
+            url=audio_url,
+            webpage_url=song.get("url") or "",
+            duration=_duration(song.get("duration")),
+            thumbnail=_best_image(song.get("image")),
+            is_video=False,
+        )
 
 
-async def get_track(query: str, video: bool = False):
-    return await asyncio.to_thread(_extract, query, video)
+async def get_track(query: str, video: bool = False) -> Track:
+    query = await _spotify_to_query(query)
+    return await _saavn_search(query)
