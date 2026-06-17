@@ -28,42 +28,35 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 YT_ID_RE = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})")
 
 
-def get_cookie():
-    cookies = list(COOKIE_DIR.glob("*.txt"))
-    return str(random.choice(cookies)) if cookies else None
+def get_cookies():
+    return [str(x) for x in COOKIE_DIR.glob("*.txt")]
 
 
 def get_video_id(text: str):
-    match = YT_ID_RE.search(text)
+    match = YT_ID_RE.search(text or "")
     return match.group(1) if match else None
 
 
 def to_seconds(duration: str):
     if not duration:
         return 0
-
     try:
-        parts = [int(x) for x in duration.split(":")]
+        parts = [int(x) for x in str(duration).split(":")]
         if len(parts) == 3:
             return parts[0] * 3600 + parts[1] * 60 + parts[2]
         if len(parts) == 2:
             return parts[0] * 60 + parts[1]
-        if len(parts) == 1:
-            return parts[0]
+        return parts[0]
     except Exception:
-        pass
-
-    return 0
+        return 0
 
 
 def find_file(video_id: str, video: bool):
-    exts = [".mp4", ".mkv", ".webm"] if video else [".webm", ".m4a", ".opus", ".mp3"]
-
+    exts = [".mp4", ".webm", ".mkv"] if video else [".webm", ".m4a", ".opus", ".mp3"]
     for ext in exts:
         path = DOWNLOAD_DIR / f"{video_id}{ext}"
         if path.exists() and path.stat().st_size > 0:
             return str(path)
-
     return None
 
 
@@ -105,9 +98,7 @@ def search_youtube(query: str):
     return None
 
 
-def ydl_base_opts():
-    cookie = get_cookie()
-
+def ydl_base_opts(cookiefile=None):
     opts = {
         "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
         "quiet": True,
@@ -122,10 +113,18 @@ def ydl_base_opts():
         "retries": 10,
         "fragment_retries": 10,
         "continuedl": True,
+
+        # IMPORTANT: avoid youtube+invidious route
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+                "skip": ["dash", "hls"],
+            }
+        },
     }
 
-    if cookie:
-        opts["cookiefile"] = cookie
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
 
     return opts
 
@@ -135,42 +134,41 @@ def download(video_id: str, video: bool = False):
     if cached:
         return cached
 
-    url = f"https://www.youtube.com/watch?v={video_id}"
+    url = f"youtube:{video_id}"
+
+    cookies = get_cookies()
+    if not cookies:
+        cookies = [None]
+    else:
+        random.shuffle(cookies)
 
     formats = (
-        [
-            "best[ext=mp4]/best",
-            "best",
-            "bv*+ba/b",
-        ]
+        ["best[ext=mp4]/best", "best"]
         if video
-        else [
-            "bestaudio[ext=webm]/bestaudio/best",
-            "bestaudio/best",
-            "best",
-        ]
+        else ["bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best", "best"]
     )
 
     last_error = None
 
-    for fmt in formats:
-        try:
-            opts = ydl_base_opts()
-            opts["format"] = fmt
+    for cookie in cookies:
+        for fmt in formats:
+            try:
+                opts = ydl_base_opts(cookie)
+                opts["format"] = fmt
 
-            if video:
-                opts["merge_output_format"] = "mp4"
+                if video:
+                    opts["merge_output_format"] = "mp4"
 
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([url])
 
-            cached = find_file(video_id, video)
-            if cached:
-                return cached
+                cached = find_file(video_id, video)
+                if cached:
+                    return cached
 
-        except Exception as e:
-            last_error = e
-            continue
+            except Exception as e:
+                last_error = e
+                continue
 
     raise Exception(f"YouTube download failed: {last_error}")
 
