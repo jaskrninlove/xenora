@@ -31,8 +31,6 @@ class Config:
     ASSISTANT_USERNAME = os.getenv("ASSISTANT_USERNAME", "")
     SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
     SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
-    API_URL = os.getenv("API_URL", "")
-    VIDEO_API_URL = os.getenv("VIDEO_API_URL", "")
-    API_KEY = os.getenv("API_KEY", "")
+    SAAVN_API_URL = os.getenv("SAAVN_API_URL", "https://saavn.dev/api")
 
 config = Config()
