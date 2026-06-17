@@ -6,7 +6,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import yt_dlp
-from youtubesearchpython import VideosSearch
+from py_yt import VideosSearch
 
 
 @dataclass
@@ -80,31 +80,27 @@ def search_youtube(query: str):
         }
 
     try:
-        search = VideosSearch(query, limit=5)
-        results = search.result()
+        search = VideosSearch(query, limit=5, with_live=False)
+        results = asyncio.run(search.next())
 
         for item in results.get("result", []):
             vid = item.get("id")
             if not vid:
                 continue
 
-            duration = item.get("duration")
-            title = item.get("title") or f"YouTube Video {vid}"
-            link = item.get("link") or f"https://www.youtube.com/watch?v={vid}"
-
             thumbnails = item.get("thumbnails") or []
             thumbnail = thumbnails[-1].get("url", "") if thumbnails else ""
 
             return {
                 "id": vid,
-                "title": title,
-                "link": link,
-                "duration": duration,
+                "title": item.get("title") or f"YouTube Video {vid}",
+                "link": item.get("link") or f"https://www.youtube.com/watch?v={vid}",
+                "duration": item.get("duration"),
                 "thumbnail": thumbnail.split("?")[0] if thumbnail else "",
             }
 
-    except Exception:
-        pass
+    except Exception as e:
+        print("YouTube search failed:", e)
 
     return None
 
