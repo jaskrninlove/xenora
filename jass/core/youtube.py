@@ -6,6 +6,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import yt_dlp
+from youtubesearchpython import VideosSearch
 
 
 @dataclass
@@ -24,7 +25,7 @@ DOWNLOAD_DIR = Path("downloads")
 COOKIE_DIR.mkdir(exist_ok=True)
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
-YT_RE = re.compile(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{11})")
+YT_ID_RE = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})")
 
 
 def get_cookie():
@@ -32,24 +33,87 @@ def get_cookie():
     return str(random.choice(cookies)) if cookies else None
 
 
-def get_video_id(query: str):
-    match = YT_RE.search(query)
+def get_video_id(text: str):
+    match = YT_ID_RE.search(text)
     return match.group(1) if match else None
 
 
+def to_seconds(duration: str):
+    if not duration:
+        return 0
+
+    try:
+        parts = [int(x) for x in duration.split(":")]
+        if len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        if len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        if len(parts) == 1:
+            return parts[0]
+    except Exception:
+        pass
+
+    return 0
+
+
 def find_file(video_id: str, video: bool):
-    exts = [".mp4", ".webm", ".mkv"] if video else [".webm", ".m4a", ".opus", ".mp3"]
+    exts = [".mp4", ".mkv", ".webm"] if video else [".webm", ".m4a", ".opus", ".mp3"]
+
     for ext in exts:
         path = DOWNLOAD_DIR / f"{video_id}{ext}"
         if path.exists() and path.stat().st_size > 0:
             return str(path)
+
     return None
 
 
-def base_opts():
+def search_youtube(query: str):
+    video_id = get_video_id(query)
+
+    if video_id:
+        return {
+            "id": video_id,
+            "title": f"YouTube Video {video_id}",
+            "link": f"https://www.youtube.com/watch?v={video_id}",
+            "duration": None,
+            "thumbnail": "",
+        }
+
+    try:
+        search = VideosSearch(query, limit=5)
+        results = search.result()
+
+        for item in results.get("result", []):
+            vid = item.get("id")
+            if not vid:
+                continue
+
+            duration = item.get("duration")
+            title = item.get("title") or f"YouTube Video {vid}"
+            link = item.get("link") or f"https://www.youtube.com/watch?v={vid}"
+
+            thumbnails = item.get("thumbnails") or []
+            thumbnail = thumbnails[-1].get("url", "") if thumbnails else ""
+
+            return {
+                "id": vid,
+                "title": title,
+                "link": link,
+                "duration": duration,
+                "thumbnail": thumbnail.split("?")[0] if thumbnail else "",
+            }
+
+    except Exception:
+        pass
+
+    return None
+
+
+def ydl_base_opts():
     cookie = get_cookie()
 
     opts = {
+        "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -61,7 +125,7 @@ def base_opts():
         "socket_timeout": 30,
         "retries": 10,
         "fragment_retries": 10,
-        "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
+        "continuedl": True,
     }
 
     if cookie:
@@ -70,144 +134,69 @@ def base_opts():
     return opts
 
 
-def search_info(query: str):
-    query = query.strip()
-
-    searches = [query] if query.startswith(("http://", "https://")) else [
-        f"ytsearch1:{query}",
-        f"ytsearch3:{query}",
-        f"ytsearch5:{query}",
-    ]
-
-    for search in searches:
-        try:
-            opts = base_opts()
-            opts["default_search"] = "ytsearch"
-            opts["extract_flat"] = False
-            opts["format"] = "best"
-
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(search, download=False)
-
-            if isinstance(info, dict) and info.get("entries"):
-                for entry in info["entries"]:
-                    if entry and entry.get("id"):
-                        return entry
-
-            if isinstance(info, dict) and info.get("id"):
-                return info
-
-        except Exception:
-            continue
-
-    return None
-
-
-def download_video(video_id: str):
-    cached = find_file(video_id, True)
+def download(video_id: str, video: bool = False):
+    cached = find_file(video_id, video)
     if cached:
         return cached
 
     url = f"https://www.youtube.com/watch?v={video_id}"
 
-    formats = [
-        "18",                 # mp4 360p with audio - most stable
-        "22",                 # mp4 720p with audio if available
-        "136+140",            # mp4 720p video + m4a audio
-        "134+140",            # mp4 360p video + m4a audio
-        "best[ext=mp4]/best",
-        "best",
-    ]
+    formats = (
+        [
+            "best[ext=mp4]/best",
+            "best",
+            "bv*+ba/b",
+        ]
+        if video
+        else [
+            "bestaudio[ext=webm]/bestaudio/best",
+            "bestaudio/best",
+            "best",
+        ]
+    )
+
+    last_error = None
 
     for fmt in formats:
         try:
-            opts = base_opts()
+            opts = ydl_base_opts()
             opts["format"] = fmt
-            opts["merge_output_format"] = "mp4"
+
+            if video:
+                opts["merge_output_format"] = "mp4"
 
             with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.extract_info(url, download=True)
+                ydl.download([url])
 
-            cached = find_file(video_id, True)
+            cached = find_file(video_id, video)
             if cached:
                 return cached
 
-        except Exception:
+        except Exception as e:
+            last_error = e
             continue
 
-    return None
-
-
-def download_audio(video_id: str):
-    cached = find_file(video_id, False)
-    if cached:
-        return cached
-
-    url = f"https://www.youtube.com/watch?v={video_id}"
-
-    formats = [
-        "140",                # m4a medium
-        "251",                # webm opus
-        "249",                # webm opus low
-        "bestaudio/best",
-        "best",
-    ]
-
-    for fmt in formats:
-        try:
-            opts = base_opts()
-            opts["format"] = fmt
-
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.extract_info(url, download=True)
-
-            cached = find_file(video_id, False)
-            if cached:
-                return cached
-
-        except Exception:
-            continue
-
-    return None
+    raise Exception(f"YouTube download failed: {last_error}")
 
 
 def _extract(query: str, video: bool = False) -> Track:
-    query = query.strip()
+    data = search_youtube(query)
 
-    direct_id = get_video_id(query)
-    info = None
+    if not data:
+        raise Exception("No YouTube result found. Try another title or direct YouTube link.")
 
-    if direct_id:
-        info = {
-            "id": direct_id,
-            "title": f"YouTube Video {direct_id}",
-            "webpage_url": f"https://www.youtube.com/watch?v={direct_id}",
-            "duration": 0,
-            "thumbnail": "",
-        }
-    else:
-        info = search_info(query)
-
-    if not info:
-        raise Exception("No YouTube result found. Try another title or direct link.")
-
-    video_id = info.get("id")
-    if not video_id:
-        raise Exception("Could not read YouTube video ID.")
-
-    file_path = download_video(video_id) if video else download_audio(video_id)
+    video_id = data["id"]
+    file_path = download(video_id, video)
 
     if not file_path or not os.path.exists(file_path):
-        raise Exception(
-            "This video could not be played. It may be region-blocked, private, age-restricted, or protected by YouTube."
-        )
+        raise Exception("Download failed. Try another upload or refresh cookies.")
 
     return Track(
-        title=info.get("title", f"YouTube Video {video_id}"),
+        title=data.get("title") or f"YouTube Video {video_id}",
         url=file_path,
-        webpage_url=info.get("webpage_url") or f"https://www.youtube.com/watch?v={video_id}",
-        duration=info.get("duration") or 0,
-        thumbnail=info.get("thumbnail") or "",
+        webpage_url=data.get("link") or f"https://www.youtube.com/watch?v={video_id}",
+        duration=to_seconds(data.get("duration")),
+        thumbnail=data.get("thumbnail") or "",
         is_video=video,
     )
 
