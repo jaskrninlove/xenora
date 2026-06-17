@@ -111,6 +111,10 @@ def download_video(video_id: str):
     url = f"https://www.youtube.com/watch?v={video_id}"
 
     formats = [
+        "18",                 # mp4 360p with audio - most stable
+        "22",                 # mp4 720p with audio if available
+        "136+140",            # mp4 720p video + m4a audio
+        "134+140",            # mp4 360p video + m4a audio
         "best[ext=mp4]/best",
         "best",
     ]
@@ -142,6 +146,9 @@ def download_audio(video_id: str):
     url = f"https://www.youtube.com/watch?v={video_id}"
 
     formats = [
+        "140",                # m4a medium
+        "251",                # webm opus
+        "249",                # webm opus low
         "bestaudio/best",
         "best",
     ]
