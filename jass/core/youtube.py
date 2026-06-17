@@ -21,84 +21,82 @@ class Track:
 
 COOKIE_DIR = Path("cookies")
 DOWNLOAD_DIR = Path("downloads")
-
 COOKIE_DIR.mkdir(exist_ok=True)
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 YT_ID_RE = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})")
 
 
-def get_cookies():
-    return [str(x) for x in COOKIE_DIR.glob("*.txt")]
+def get_cookie():
+    cookies = list(COOKIE_DIR.glob("*.txt"))
+    return str(random.choice(cookies)) if cookies else None
 
 
 def get_video_id(text: str):
-    match = YT_ID_RE.search(text or "")
-    return match.group(1) if match else None
+    m = YT_ID_RE.search(text or "")
+    return m.group(1) if m else None
 
 
-def to_seconds(duration: str):
+def to_seconds(duration):
     if not duration:
         return 0
     try:
-        parts = [int(x) for x in str(duration).split(":")]
-        if len(parts) == 3:
-            return parts[0] * 3600 + parts[1] * 60 + parts[2]
-        if len(parts) == 2:
-            return parts[0] * 60 + parts[1]
-        return parts[0]
+        p = [int(x) for x in str(duration).split(":")]
+        if len(p) == 3:
+            return p[0] * 3600 + p[1] * 60 + p[2]
+        if len(p) == 2:
+            return p[0] * 60 + p[1]
+        return p[0]
     except Exception:
         return 0
 
 
 def find_file(video_id: str, video: bool):
-    exts = [".mp4", ".webm", ".mkv"] if video else [".webm", ".m4a", ".opus", ".mp3"]
+    exts = [".mp4", ".webm", ".mkv"] if video else [".webm", ".m4a", ".mp3", ".opus"]
     for ext in exts:
-        path = DOWNLOAD_DIR / f"{video_id}{ext}"
-        if path.exists() and path.stat().st_size > 0:
-            return str(path)
+        p = DOWNLOAD_DIR / f"{video_id}{ext}"
+        if p.exists() and p.stat().st_size > 0:
+            return str(p)
     return None
 
 
 def search_youtube(query: str):
-    video_id = get_video_id(query)
-
-    if video_id:
+    vid = get_video_id(query)
+    if vid:
         return {
-            "id": video_id,
-            "title": f"YouTube Video {video_id}",
-            "link": f"https://www.youtube.com/watch?v={video_id}",
+            "id": vid,
+            "title": f"YouTube Video {vid}",
+            "link": f"https://www.youtube.com/watch?v={vid}",
             "duration": None,
             "thumbnail": "",
         }
 
     try:
-        search = VideosSearch(query, limit=5, with_live=False)
-        results = asyncio.run(search.next())
+        s = VideosSearch(query, limit=5, with_live=False)
+        r = asyncio.run(s.next())
 
-        for item in results.get("result", []):
+        for item in r.get("result", []):
             vid = item.get("id")
             if not vid:
                 continue
 
-            thumbnails = item.get("thumbnails") or []
-            thumbnail = thumbnails[-1].get("url", "") if thumbnails else ""
+            thumbs = item.get("thumbnails") or []
+            thumb = thumbs[-1].get("url", "") if thumbs else ""
 
             return {
                 "id": vid,
                 "title": item.get("title") or f"YouTube Video {vid}",
                 "link": item.get("link") or f"https://www.youtube.com/watch?v={vid}",
                 "duration": item.get("duration"),
-                "thumbnail": thumbnail.split("?")[0] if thumbnail else "",
+                "thumbnail": thumb.split("?")[0] if thumb else "",
             }
-
     except Exception as e:
         print("YouTube search failed:", e)
 
     return None
 
 
-def ydl_base_opts(cookiefile=None):
+def ydl_opts(video: bool, cookie=None):
     opts = {
         "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
         "quiet": True,
@@ -109,81 +107,62 @@ def ydl_base_opts(cookiefile=None):
         "cachedir": False,
         "overwrites": False,
         "ignoreerrors": False,
-        "socket_timeout": 30,
         "retries": 10,
         "fragment_retries": 10,
         "continuedl": True,
-
-        # IMPORTANT: avoid youtube+invidious route
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"],
-                "skip": ["dash", "hls"],
-            }
-        },
+        "socket_timeout": 30,
+        "format": "best" if video else "bestaudio/best",
     }
 
-    if cookiefile:
-        opts["cookiefile"] = cookiefile
+    if video:
+        opts["merge_output_format"] = "mp4"
+
+    if cookie:
+        opts["cookiefile"] = cookie
 
     return opts
 
 
-def download(video_id: str, video: bool = False):
+def download(video_id: str, video: bool):
     cached = find_file(video_id, video)
     if cached:
         return cached
 
     url = f"https://www.youtube.com/watch?v={video_id}"
 
-    cookies = get_cookies()
-    if not cookies:
-        cookies = [None]
-    else:
-        random.shuffle(cookies)
-
-    formats = (
-        ["best[ext=mp4]/best", "best"]
-        if video
-        else ["bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best", "best"]
-    )
+    cookies = list(COOKIE_DIR.glob("*.txt"))
+    random.shuffle(cookies)
+    cookie_list = [str(c) for c in cookies] or [None]
 
     last_error = None
 
-    for cookie in cookies:
-        for fmt in formats:
-            try:
-                opts = ydl_base_opts(cookie)
-                opts["format"] = fmt
+    for cookie in cookie_list:
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts(video, cookie)) as ydl:
+                ydl.download([url])
 
-                if video:
-                    opts["merge_output_format"] = "mp4"
+            cached = find_file(video_id, video)
+            if cached:
+                return cached
 
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
-
-                cached = find_file(video_id, video)
-                if cached:
-                    return cached
-
-            except Exception as e:
-                last_error = e
-                continue
+        except Exception as e:
+            last_error = e
+            continue
 
     raise Exception(f"YouTube download failed: {last_error}")
 
 
-def _extract(query: str, video: bool = False) -> Track:
+def _extract(query: str, video: bool = False):
     data = search_youtube(query)
 
     if not data:
-        raise Exception("No YouTube result found. Try another title or direct YouTube link.")
+        raise Exception("No YouTube result found. Try direct YouTube link.")
 
     video_id = data["id"]
     file_path = download(video_id, video)
 
     if not file_path or not os.path.exists(file_path):
-        raise Exception("Download failed. Try another upload or refresh cookies.")
+        raise Exception("Download failed.")
 
     return Track(
         title=data.get("title") or f"YouTube Video {video_id}",
@@ -195,5 +174,5 @@ def _extract(query: str, video: bool = False) -> Track:
     )
 
 
-async def get_track(query: str, video: bool = False) -> Track:
+async def get_track(query: str, video: bool = False):
     return await asyncio.to_thread(_extract, query, video)
