@@ -9,3 +9,4 @@ aiohttp
 psutil
 spotipy
 dnspython
+yt-dlp-invidious
