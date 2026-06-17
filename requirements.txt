@@ -10,3 +10,4 @@ psutil
 spotipy
 dnspython
 yt-dlp-invidious
+youtube-search-python
