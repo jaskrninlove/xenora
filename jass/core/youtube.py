@@ -134,7 +134,7 @@ def download(video_id: str, video: bool = False):
     if cached:
         return cached
 
-    url = f"youtube:{video_id}"
+    url = f"https://www.youtube.com/watch?v={video_id}"
 
     cookies = get_cookies()
     if not cookies:
