@@ -1,5 +1,9 @@
-from dataclasses import dataclass
+import os
+import random
 import asyncio
+from pathlib import Path
+from dataclasses import dataclass
+
 import yt_dlp
 
 
@@ -13,155 +17,137 @@ class Track:
     is_video: bool = False
 
 
-BASE_OPTS = {
-    "quiet": True,
-    "no_warnings": True,
-    "noplaylist": True,
-    "default_search": "ytsearch1",
-    "geo_bypass": True,
-    "cachedir": False,
-    "socket_timeout": 15,
-    "extract_flat": False,
-    "ignoreerrors": True,
-    "source_address": "0.0.0.0",
-    "cookiefile": "cookies/cookies.txt",
-}
+COOKIE_DIR = Path("cookies")
+DOWNLOAD_DIR = Path("downloads")
+
+COOKIE_DIR.mkdir(exist_ok=True)
+DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 
-def _make_opts(video: bool = False, fallback: bool = False):
-    opts = BASE_OPTS.copy()
+def get_cookie():
+    cookies = list(COOKIE_DIR.glob("*.txt"))
+    if not cookies:
+        return None
+    return str(random.choice(cookies))
 
-    if fallback:
-        opts["format"] = "best/bestaudio/bestvideo"
-    elif video:
-        opts["format"] = (
-            "best[height<=720]/"
-            "bestvideo[height<=720]+bestaudio/"
-            "best"
+
+def ydl_opts(video: bool = False):
+    cookie = get_cookie()
+
+    base = {
+        "outtmpl": "downloads/%(id)s.%(ext)s",
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        "cachedir": False,
+        "overwrites": False,
+        "ignoreerrors": False,
+        "socket_timeout": 20,
+    }
+
+    if cookie:
+        base["cookiefile"] = cookie
+
+    if video:
+        base.update(
+            {
+                "format": "bestvideo[height<=720][ext=mp4]+bestaudio/best[height<=720]/best",
+                "merge_output_format": "mp4",
+            }
         )
     else:
-        opts["format"] = (
-            "bestaudio[ext=m4a]/"
-            "bestaudio[ext=webm]/"
-            "bestaudio/best"
+        base.update(
+            {
+                "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
+            }
         )
+
+    return base
+
+
+def search_opts():
+    cookie = get_cookie()
+
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "default_search": "ytsearch1",
+        "geo_bypass": True,
+        "extract_flat": False,
+        "cachedir": False,
+        "socket_timeout": 15,
+    }
+
+    if cookie:
+        opts["cookiefile"] = cookie
 
     return opts
 
 
-def _pick_info(info):
-    if not isinstance(info, dict):
-        return None
-
-    entries = info.get("entries")
-    if entries:
-        for entry in entries:
-            if entry and isinstance(entry, dict):
-                if entry.get("url") or entry.get("formats"):
-                    return entry
-        for entry in entries:
-            if entry and isinstance(entry, dict):
-                return entry
-        return None
-
-    return info
+def find_file(video_id: str, video: bool = False):
+    exts = [".mp4", ".mkv", ".webm"] if video else [".m4a", ".webm", ".opus", ".mp3"]
+    for ext in exts:
+        path = DOWNLOAD_DIR / f"{video_id}{ext}"
+        if path.exists():
+            return str(path)
+    return None
 
 
-def _get_best_format_url(info, video: bool = False):
-    if not isinstance(info, dict):
-        return ""
+def _search_info(query: str):
+    search = query.strip()
 
-    if info.get("url"):
-        return info["url"]
+    if not search.startswith(("http://", "https://")):
+        search = f"ytsearch1:{search}"
 
-    formats = info.get("formats") or []
-    if not formats:
-        return ""
-
-    if video:
-        for fmt in reversed(formats):
-            url = fmt.get("url")
-            vcodec = fmt.get("vcodec")
-            acodec = fmt.get("acodec")
-            height = fmt.get("height") or 0
-
-            if url and vcodec != "none" and acodec != "none" and height <= 720:
-                return url
-
-        for fmt in reversed(formats):
-            url = fmt.get("url")
-            vcodec = fmt.get("vcodec")
-            height = fmt.get("height") or 0
-
-            if url and vcodec != "none" and height <= 720:
-                return url
-
-    for fmt in reversed(formats):
-        url = fmt.get("url")
-        acodec = fmt.get("acodec")
-
-        if url and acodec != "none":
-            return url
-
-    for fmt in reversed(formats):
-        if fmt.get("url"):
-            return fmt["url"]
-
-    return ""
-
-
-def _extract_once(search: str, video: bool = False, fallback: bool = False):
-    with yt_dlp.YoutubeDL(_make_opts(video, fallback)) as ydl:
+    with yt_dlp.YoutubeDL(search_opts()) as ydl:
         info = ydl.extract_info(search, download=False)
 
-    info = _pick_info(info)
-    if not info:
-        return None
+    if isinstance(info, dict) and info.get("entries"):
+        for entry in info["entries"]:
+            if entry:
+                return entry
 
-    url = _get_best_format_url(info, video)
+    return info if isinstance(info, dict) else None
 
-    if not url:
-        return None
 
-    return Track(
-        title=info.get("title", "Unknown Track"),
-        url=url,
-        webpage_url=info.get("webpage_url") or info.get("original_url") or "",
-        duration=info.get("duration") or 0,
-        thumbnail=info.get("thumbnail") or "",
-        is_video=video,
-    )
+def _download(video_id: str, video: bool = False):
+    cached = find_file(video_id, video)
+    if cached:
+        return cached
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+
+    with yt_dlp.YoutubeDL(ydl_opts(video)) as ydl:
+        ydl.download([url])
+
+    return find_file(video_id, video)
 
 
 def _extract(query: str, video: bool = False) -> Track:
-    query = query.strip()
+    info = _search_info(query)
 
-    searches = []
+    if not info:
+        raise Exception("No YouTube result found. Try another song name.")
 
-    if query.startswith(("http://", "https://")):
-        searches.append(query)
-    else:
-        searches.append(f"ytsearch1:{query}")
-        searches.append(f"ytsearch3:{query}")
+    video_id = info.get("id")
+    if not video_id:
+        raise Exception("Could not get YouTube video ID.")
 
-    for search in searches:
-        try:
-            track = _extract_once(search, video=video, fallback=False)
-            if track:
-                return track
-        except Exception:
-            pass
+    file_path = _download(video_id, video)
 
-        try:
-            track = _extract_once(search, video=video, fallback=True)
-            if track:
-                return track
-        except Exception:
-            pass
+    if not file_path or not os.path.exists(file_path):
+        raise Exception("Download failed. Try another upload or refresh cookies.")
 
-    raise Exception(
-        "This video is available on YouTube, but no playable stream was returned. "
-        "Try another upload, shorter title, or add YouTube cookies."
+    return Track(
+        title=info.get("title", "Unknown Track"),
+        url=file_path,
+        webpage_url=info.get("webpage_url") or f"https://www.youtube.com/watch?v={video_id}",
+        duration=info.get("duration") or 0,
+        thumbnail=info.get("thumbnail") or "",
+        is_video=video,
     )
 
 
