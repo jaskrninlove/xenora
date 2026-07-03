@@ -1,15 +1,9 @@
 # ==========================================================
-
 # JassMusic
-
 # Copyright (c) 2026 Jass
-
 # Proprietary Software. Unauthorized copying, modification, distribution, or resale of this source code is strictly prohibited.
-
 # Developed by Jass (Jaskaran Singh)
-
 # © 2026 All Rights Reserved.
-
 # ==========================================================
 
 import asyncio
@@ -25,10 +19,12 @@ from pyrogram.errors import (
     ChatWriteForbidden,
     UserNotParticipant,
 )
+from pyrogram.enums import ParseMode
 
 from ..config import config
 from ..core.database import db
 from ..core.logger import action_log, error_log
+from ..helpers.premium import render
 
 _LP = LinkPreviewOptions(is_disabled=True)
 
@@ -81,25 +77,39 @@ async def _get_targets(mode: str):
     return users, groups
 
 
+async def premium_reply(message, text: str):
+    return await message.reply_text(
+        render(text),
+        parse_mode=ParseMode.HTML,
+        link_preview_options=_LP,
+    )
+
+
+async def premium_edit(message, text: str):
+    return await message.edit_text(
+        render(text),
+        parse_mode=ParseMode.HTML,
+        link_preview_options=_LP,
+    )
+
+
 def register(app, call):
 
     async def broadcast(client, message):
         try:
             if not message.reply_to_message:
-                return await message.reply_text(
-                    """<blockquote><b>📢 Broadcast — Usage</b></blockquote>
-
-Reply to any message with:
-
-❖ <code>/broadcast users</code>
-❖ <code>/broadcast groups</code>
-❖ <code>/broadcast both</code>
-
-<b>Supported:</b>
-Text, photos, videos, documents, stickers, audio, voice notes, captions and inline buttons.
-
-<blockquote>The original formatting and buttons will be preserved.</blockquote>""",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    ":updates: <b>Broadcast Usage</b>\n\n"
+                    "<blockquote>"
+                    "Reply to any message with:\n\n"
+                    ":profile: <code>/broadcast users</code>\n"
+                    ":chat: <code>/broadcast groups</code>\n"
+                    ":rocket: <code>/broadcast both</code>\n\n"
+                    "<b>Supported:</b>\n"
+                    "Text, photos, videos, documents, stickers, audio, voice notes, captions and inline buttons.\n\n"
+                    "Original formatting and buttons will be preserved."
+                    "</blockquote>",
                 )
 
             mode = "both"
@@ -108,42 +118,40 @@ Text, photos, videos, documents, stickers, audio, voice notes, captions and inli
                 mode = message.command[1].lower()
 
             if mode not in ["users", "groups", "both"]:
-                return await message.reply_text(
-                    """<blockquote><b>📢 Invalid Broadcast Mode</b></blockquote>
-
-Use one of these:
-
-❖ <code>/broadcast users</code>
-❖ <code>/broadcast groups</code>
-❖ <code>/broadcast both</code>""",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    ":warning: <b>Invalid Broadcast Mode</b>\n\n"
+                    "<blockquote>"
+                    "Use one of these:\n\n"
+                    ":profile: <code>/broadcast users</code>\n"
+                    ":chat: <code>/broadcast groups</code>\n"
+                    ":rocket: <code>/broadcast both</code>"
+                    "</blockquote>",
                 )
 
             replied = message.reply_to_message
-
             users, groups = await _get_targets(mode)
             targets = users + groups
 
             if not targets:
-                return await message.reply_text(
-                    f"""<blockquote><b>📭 No Recipients</b></blockquote>
-
-No recipients found for mode: <code>{mode}</code>""",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    f":mail: <b>No Recipients</b>\n\n"
+                    f"<blockquote>No recipients found for mode: <code>{mode}</code></blockquote>",
                 )
 
-            await action_log(f"📢 Broadcast Started — {mode}", message)
+            await action_log(f"Broadcast Started — {mode}", message)
 
-            status_msg = await message.reply_text(
-                f"""<blockquote><b>📢 Broadcast In Progress</b></blockquote>
-
-❖ <b>Mode :</b> <code>{mode}</code>
-❖ <b>Users :</b> <code>{len(users)}</code>
-❖ <b>Groups :</b> <code>{len(groups)}</code>
-❖ <b>Total Targets :</b> <code>{len(targets)}</code>
-
-<blockquote>Sending message without changing formatting...</blockquote>""",
-                link_preview_options=_LP,
+            status_msg = await premium_reply(
+                message,
+                f":updates: <b>Broadcast In Progress</b>\n\n"
+                f"<blockquote>"
+                f":settings: <b>Mode:</b> <code>{mode}</code>\n"
+                f":profile: <b>Users:</b> <code>{len(users)}</code>\n"
+                f":chat: <b>Groups:</b> <code>{len(groups)}</code>\n"
+                f":target: <b>Total Targets:</b> <code>{len(targets)}</code>\n\n"
+                f"Sending message without changing formatting."
+                f"</blockquote>",
             )
 
             stats = {
@@ -167,16 +175,16 @@ No recipients found for mode: <code>{mode}</code>""",
                             + stats["error"]
                         )
 
-                        await status_msg.edit_text(
-                            f"""<blockquote><b>📢 Broadcast In Progress</b></blockquote>
-
-❖ <b>Mode :</b> <code>{mode}</code>
-❖ <b>Progress :</b> <code>{index} / {len(targets)}</code>
-❖ <b>Delivered :</b> <code>{stats["ok"]}</code>
-❖ <b>Failed :</b> <code>{failed}</code>
-
-<blockquote>Please wait until delivery completes.</blockquote>""",
-                            link_preview_options=_LP,
+                        await premium_edit(
+                            status_msg,
+                            f":updates: <b>Broadcast In Progress</b>\n\n"
+                            f"<blockquote>"
+                            f":settings: <b>Mode:</b> <code>{mode}</code>\n"
+                            f":chart: <b>Progress:</b> <code>{index} / {len(targets)}</code>\n"
+                            f":success: <b>Delivered:</b> <code>{stats['ok']}</code>\n"
+                            f":warning: <b>Failed:</b> <code>{failed}</code>\n\n"
+                            f"Please wait until delivery completes."
+                            f"</blockquote>",
                         )
                     except Exception:
                         pass
@@ -190,36 +198,32 @@ No recipients found for mode: <code>{mode}</code>""",
                 + stats["error"]
             )
 
-            await status_msg.edit_text(
-                f"""<blockquote><b>📢 Broadcast Completed</b></blockquote>
-
-<b>📊 Delivery Report</b>
-❖ <b>Mode :</b> <code>{mode}</code>
-❖ <b>Total Targets :</b> <code>{len(targets)}</code>
-❖ <b>Users :</b> <code>{len(users)}</code>
-❖ <b>Groups :</b> <code>{len(groups)}</code>
-
-<b>✅ Result</b>
-❖ <b>Delivered :</b> <code>{stats["ok"]}</code>
-❖ <b>Failed :</b> <code>{failed}</code>
-
-<b>🔍 Failure Breakdown</b>
-❖ <b>Blocked Bot :</b> <code>{stats["blocked"]}</code>
-❖ <b>Deleted Account :</b> <code>{stats["deleted"]}</code>
-❖ <b>No Write Access :</b> <code>{stats["forbidden"]}</code>
-❖ <b>Other Errors :</b> <code>{stats["error"]}</code>
-
-<blockquote>♫ Broadcast finished successfully.</blockquote>""",
-                link_preview_options=_LP,
+            await premium_edit(
+                status_msg,
+                f":success: <b>Broadcast Completed</b>\n\n"
+                f"<blockquote>"
+                f":chart: <b>Delivery Report</b>\n\n"
+                f":settings: <b>Mode:</b> <code>{mode}</code>\n"
+                f":target: <b>Total Targets:</b> <code>{len(targets)}</code>\n"
+                f":profile: <b>Users:</b> <code>{len(users)}</code>\n"
+                f":chat: <b>Groups:</b> <code>{len(groups)}</code>\n\n"
+                f":success: <b>Delivered:</b> <code>{stats['ok']}</code>\n"
+                f":warning: <b>Failed:</b> <code>{failed}</code>\n\n"
+                f":warning: <b>Failure Breakdown</b>\n"
+                f":sad: <b>Blocked Bot:</b> <code>{stats['blocked']}</code>\n"
+                f":error: <b>Deleted Account:</b> <code>{stats['deleted']}</code>\n"
+                f":lock: <b>No Write Access:</b> <code>{stats['forbidden']}</code>\n"
+                f":warning: <b>Other Errors:</b> <code>{stats['error']}</code>\n\n"
+                f"Broadcast finished successfully."
+                f"</blockquote>",
             )
 
         except Exception as e:
             await error_log("Broadcast Command", e)
-            await message.reply_text(
-                f"""<blockquote><b>❌ Broadcast Failed</b></blockquote>
-
-❖ <b>Error :</b> <code>{e}</code>""",
-                link_preview_options=_LP,
+            await premium_reply(
+                message,
+                f":error: <b>Broadcast Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
             )
 
     app.add_handler(

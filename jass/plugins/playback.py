@@ -1,15 +1,9 @@
 # ==========================================================
-
 # JassMusic
-
 # Copyright (c) 2026 Jass
-
 # Proprietary Software. Unauthorized copying, modification, distribution, or resale of this source code is strictly prohibited.
-
 # Developed by Jass (Jaskaran Singh)
-
 # © 2026 All Rights Reserved.
-
 # ==========================================================
 
 import random
@@ -17,16 +11,25 @@ import random
 from pyrogram import filters
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import LinkPreviewOptions
-
+from pyrogram.enums import ParseMode
 from ..core.queue import queue
 from ..core.player import active, loop_enabled
 from ..core.logger import action_log, error_log
+from ..helpers.premium import render
 
 _LP = LinkPreviewOptions(is_disabled=True)
 
 
 def get_title(track):
     return getattr(track, "title", "Unknown Track")
+
+
+async def premium_reply(message, text: str):
+    return await message.reply_text(
+        render(text),
+        parse_mode=ParseMode.HTML,
+        link_preview_options=_LP,
+    )
 
 
 def register(app, call):
@@ -37,33 +40,35 @@ def register(app, call):
             items = queue.list(chat_id)
 
             if not items:
-                return await message.reply_text(
-                    "<blockquote><b>🔀 Shuffle</b></blockquote>\n\n"
-                    "The queue is empty — nothing to shuffle.\n\n"
-                    "<blockquote>♫ Use /play to add tracks first.</blockquote>",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    ":shuffle: <b>Shuffle</b>\n\n"
+                    "<blockquote>"
+                    "The queue is empty. Nothing to shuffle.\n\n"
+                    ":music: Use /play to add tracks first."
+                    "</blockquote>",
                 )
 
             shuffled = list(items)
             random.shuffle(shuffled)
             queue._queue[chat_id] = shuffled
 
-            await action_log("🔀 Shuffle", message)
-            await message.reply_text(
-                f"""<blockquote><b>🔀 Queue Shuffled</b></blockquote>
-
-❖ <b>Tracks Shuffled :</b> <code>{len(shuffled)}</code>
-
-<blockquote>♫ The queue order has been randomised.</blockquote>""",
-                link_preview_options=_LP,
+            await action_log("Shuffle", message)
+            await premium_reply(
+                message,
+                f":shuffle: <b>Queue Shuffled</b>\n\n"
+                f"<blockquote>"
+                f":queue: <b>Tracks Shuffled:</b> <code>{len(shuffled)}</code>\n\n"
+                f"The queue order has been randomised."
+                f"</blockquote>",
             )
 
         except Exception as e:
             await error_log("Shuffle", e)
-            await message.reply_text(
-                f"<blockquote><b>❌ Shuffle Failed</b></blockquote>\n\n"
-                f"❖ <b>Error :</b> <code>{e}</code>",
-                link_preview_options=_LP,
+            await premium_reply(
+                message,
+                f":error: <b>Shuffle Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
             )
 
     async def loop(client, message):
@@ -73,45 +78,47 @@ def register(app, call):
             current = loop_enabled.get(chat_id, False)
 
             if arg not in ("on", "off"):
-                return await message.reply_text(
-                    f"""<blockquote><b>🔁 Loop — Usage</b></blockquote>
-
-❖ <b>/loop on</b> — Repeat the current track
-❖ <b>/loop off</b> — Continue queue normally
-
-❖ <b>Current Status :</b> <code>{"ON" if current else "OFF"}</code>""",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    f":loop: <b>Loop Usage</b>\n\n"
+                    f"<blockquote>"
+                    f":success: <b>/loop on</b> — Repeat the current track\n"
+                    f":error: <b>/loop off</b> — Continue queue normally\n\n"
+                    f":signal: <b>Current Status:</b> <code>{'ON' if current else 'OFF'}</code>"
+                    f"</blockquote>",
                 )
 
             if chat_id not in active:
-                return await message.reply_text(
-                    "<blockquote><b>🔁 Loop</b></blockquote>\n\n"
+                return await premium_reply(
+                    message,
+                    ":loop: <b>Loop</b>\n\n"
+                    "<blockquote>"
                     "There is no active stream in this chat.\n\n"
-                    "<blockquote>♫ Start one with /play first.</blockquote>",
-                    link_preview_options=_LP,
+                    ":music: Start one with /play first."
+                    "</blockquote>",
                 )
 
             state = arg == "on"
             loop_enabled[chat_id] = state
             track = active.get(chat_id)
 
-            await action_log(f"🔁 Loop {'On' if state else 'Off'}", message)
-            await message.reply_text(
-                f"""<blockquote><b>🔁 Loop {"Enabled" if state else "Disabled"}</b></blockquote>
-
-❖ <b>Track :</b> {get_title(track)}
-❖ <b>Status :</b> <code>{"ON — current track will repeat" if state else "OFF — queue will advance normally"}</code>
-
-<blockquote>♫ {"Use /loop off to return to normal playback." if state else "The queue will now continue normally."}</blockquote>""",
-                link_preview_options=_LP,
+            await action_log(f"Loop {'On' if state else 'Off'}", message)
+            await premium_reply(
+                message,
+                f":loop: <b>Loop {'Enabled' if state else 'Disabled'}</b>\n\n"
+                f"<blockquote>"
+                f":music: <b>Track:</b> {get_title(track)}\n"
+                f":signal: <b>Status:</b> <code>{'ON — current track will repeat' if state else 'OFF — queue will advance normally'}</code>\n\n"
+                f"{'Use /loop off to return to normal playback.' if state else 'The queue will now continue normally.'}"
+                f"</blockquote>",
             )
 
         except Exception as e:
             await error_log("Loop", e)
-            await message.reply_text(
-                f"<blockquote><b>❌ Loop Failed</b></blockquote>\n\n"
-                f"❖ <b>Error :</b> <code>{e}</code>",
-                link_preview_options=_LP,
+            await premium_reply(
+                message,
+                f":error: <b>Loop Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
             )
 
     async def volume(client, message):
@@ -119,59 +126,60 @@ def register(app, call):
             chat_id = message.chat.id
 
             if len(message.command) < 2 or not message.command[1].isdigit():
-                return await message.reply_text(
-                    "<blockquote><b>🔊 Volume — Usage</b></blockquote>\n\n"
-                    "❖ <b>/volume</b> <code>[1–200]</code>",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    ":volume: <b>Volume Usage</b>\n\n"
+                    "<blockquote>:volume: <b>/volume</b> <code>[1-200]</code></blockquote>",
                 )
 
             vol = int(message.command[1])
 
             if not 1 <= vol <= 200:
-                return await message.reply_text(
-                    "<blockquote><b>🔊 Invalid Volume</b></blockquote>\n\n"
-                    "Volume must be between <code>1</code> and <code>200</code>.",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    ":warning: <b>Invalid Volume</b>\n\n"
+                    "<blockquote>Volume must be between <code>1</code> and <code>200</code>.</blockquote>",
                 )
 
             if chat_id not in active:
-                return await message.reply_text(
-                    "<blockquote><b>🔊 Volume</b></blockquote>\n\n"
-                    "There is no active stream in this chat.",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    ":volume: <b>Volume</b>\n\n"
+                    "<blockquote>There is no active stream in this chat.</blockquote>",
                 )
 
             await call.change_volume_call(chat_id, vol)
-            await action_log(f"🔊 Volume → {vol}", message)
+            await action_log(f"Volume -> {vol}", message)
 
             filled = int(vol / 200 * 10)
-            bar = "█" * filled + "░" * (10 - filled)
+            empty = 10 - filled
+            bar = "●" * filled + "○" * empty
 
-            await message.reply_text(
-                f"""<blockquote><b>🔊 Volume Updated</b></blockquote>
-
-❖ <b>Level :</b> [{bar}] <code>{vol}%</code>
-
-<blockquote>♫ Playback volume updated.</blockquote>""",
-                link_preview_options=_LP,
+            await premium_reply(
+                message,
+                f":volume: <b>Volume Updated</b>\n\n"
+                f"<blockquote>"
+                f":signal: <b>Level:</b> <code>{bar}</code> <code>{vol}%</code>\n\n"
+                f"Playback volume updated."
+                f"</blockquote>",
             )
 
         except Exception as e:
             await error_log("Volume", e)
-            await message.reply_text(
-                f"<blockquote><b>❌ Volume Failed</b></blockquote>\n\n"
-                f"❖ <b>Error :</b> <code>{e}</code>",
-                link_preview_options=_LP,
+            await premium_reply(
+                message,
+                f":error: <b>Volume Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
             )
 
     async def seek(client, message):
-        await message.reply_text(
-            """<blockquote><b>⚠️ Seek Unavailable</b></blockquote>
-
-This PyTgCalls version does not support stream seeking.
-
-<blockquote>♫ Use /skip or /play again to control playback.</blockquote>""",
-            link_preview_options=_LP,
+        await premium_reply(
+            message,
+            ":warning: <b>Seek Unavailable</b>\n\n"
+            "<blockquote>"
+            "This PyTgCalls version does not support stream seeking.\n\n"
+            ":skip: Use /skip or /play again to control playback."
+            "</blockquote>",
         )
 
     async def clearqueue(client, message):
@@ -180,31 +188,34 @@ This PyTgCalls version does not support stream seeking.
             items = queue.list(chat_id)
 
             if not items:
-                return await message.reply_text(
-                    "<blockquote><b>🗑 Clear Queue</b></blockquote>\n\n"
-                    "The queue is already empty.\n\n <blockquote>♫ Use /play to add tracks.</blockquote>",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    ":delete: <b>Clear Queue</b>\n\n"
+                    "<blockquote>"
+                    "The queue is already empty.\n\n"
+                    ":music: Use /play to add tracks."
+                    "</blockquote>",
                 )
 
             count = len(items)
             queue.clear(chat_id)
 
-            await action_log("🗑 Clear Queue", message)
-            await message.reply_text(
-                f"""<blockquote><b>🗑 Queue Cleared</b></blockquote>
-
-❖ <b>Tracks Removed :</b> <code>{count}</code>
-
-<blockquote>♫ Current track will continue playing.</blockquote>""",
-                link_preview_options=_LP,
+            await action_log("Clear Queue", message)
+            await premium_reply(
+                message,
+                f":delete: <b>Queue Cleared</b>\n\n"
+                f"<blockquote>"
+                f":queue: <b>Tracks Removed:</b> <code>{count}</code>\n\n"
+                f"Current track will continue playing."
+                f"</blockquote>",
             )
 
         except Exception as e:
             await error_log("ClearQueue", e)
-            await message.reply_text(
-                f"<blockquote><b>❌ Clear Queue Failed</b></blockquote>\n\n"
-                f"❖ <b>Error :</b> <code>{e}</code>",
-                link_preview_options=_LP,
+            await premium_reply(
+                message,
+                f":error: <b>Clear Queue Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
             )
 
     async def remove(client, message):
@@ -212,49 +223,52 @@ This PyTgCalls version does not support stream seeking.
             chat_id = message.chat.id
 
             if len(message.command) < 2 or not message.command[1].isdigit():
-                return await message.reply_text(
-                    "<blockquote><b>🗑 Remove — Usage</b></blockquote>\n\n"
-                    "❖ <b>/remove</b> <code>[position]</code>\n\n <blockquote>♫ Use /queue to see position numbers.</blockquote>",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    ":delete: <b>Remove Usage</b>\n\n"
+                    "<blockquote>"
+                    ":delete: <b>/remove</b> <code>[position]</code>\n\n"
+                    ":queue: Use /queue to see position numbers."
+                    "</blockquote>",
                 )
 
             pos = int(message.command[1])
             items = queue.list(chat_id)
 
             if not items:
-                return await message.reply_text(
-                    "<blockquote><b>🗑 Remove</b></blockquote>\n\n"
-                    "The queue is empty.",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    ":delete: <b>Remove</b>\n\n"
+                    "<blockquote>The queue is empty.</blockquote>",
                 )
 
             if not 1 <= pos <= len(items):
-                return await message.reply_text(
-                    f"<blockquote><b>🗑 Invalid Position</b></blockquote>\n\n"
-                    f"Queue has <code>{len(items)}</code> track(s).",
-                    link_preview_options=_LP,
+                return await premium_reply(
+                    message,
+                    f":warning: <b>Invalid Position</b>\n\n"
+                    f"<blockquote>Queue has <code>{len(items)}</code> track(s).</blockquote>",
                 )
 
             removed = items.pop(pos - 1)
             queue._queue[chat_id] = items
 
-            await action_log(f"🗑 Remove #{pos}", message)
-            await message.reply_text(
-                f"""<blockquote><b>🗑 Track Removed</b></blockquote>
-
-❖ <b>Position :</b> <code>#{pos}</code>
-❖ <b>Title :</b> {get_title(removed)}
-
-<blockquote>♫ {len(items)} track(s) remaining.</blockquote>""",
-                link_preview_options=_LP,
+            await action_log(f"Remove #{pos}", message)
+            await premium_reply(
+                message,
+                f":delete: <b>Track Removed</b>\n\n"
+                f"<blockquote>"
+                f":queue: <b>Position:</b> <code>#{pos}</code>\n"
+                f":music: <b>Title:</b> {get_title(removed)}\n\n"
+                f":success: <code>{len(items)}</code> track(s) remaining."
+                f"</blockquote>",
             )
 
         except Exception as e:
             await error_log("Remove", e)
-            await message.reply_text(
-                f"<blockquote><b>❌ Remove Failed</b></blockquote>\n\n"
-                f"❖ <b>Error :</b> <code>{e}</code>",
-                link_preview_options=_LP,
+            await premium_reply(
+                message,
+                f":error: <b>Remove Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
             )
 
     app.add_handler(MessageHandler(shuffle, filters.command("shuffle")))

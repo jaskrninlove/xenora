@@ -1,15 +1,9 @@
 # ==========================================================
-
 # JassMusic
-
 # Copyright (c) 2026 Jass
-
 # Proprietary Software. Unauthorized copying, modification, distribution, or resale of this source code is strictly prohibited.
-
 # Developed by Jass (Jaskaran Singh)
-
 # © 2026 All Rights Reserved.
-
 # ==========================================================
 
 import asyncio
@@ -19,13 +13,21 @@ from . import app, assistant, call, logger
 from .database.mongo import connect_db
 from .plugins import load_plugins
 from .core.logger import startup_log
+from .ptb_app import build_ptb_app
 
 
 async def start_bot():
     await connect_db()
 
     load_plugins()
-    logger.info("Plugins loaded")
+    logger.info("Pyrogram plugins loaded")
+
+    ptb = build_ptb_app(app, call)
+
+    await ptb.initialize()
+    await ptb.start()
+    await ptb.updater.start_polling()
+    logger.info("PTB premium UI started")
 
     await app.start()
     logger.info("Bot client started")
@@ -39,7 +41,19 @@ async def start_bot():
     await startup_log()
 
     logger.info("JassMusic is running...")
-    await idle()
+
+    try:
+        await idle()
+    finally:
+        logger.info("Stopping JassMusic...")
+
+        await ptb.updater.stop()
+        await ptb.stop()
+        await ptb.shutdown()
+
+        await call.stop()
+        await assistant.stop()
+        await app.stop()
 
 
 loop = asyncio.get_event_loop()

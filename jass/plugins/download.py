@@ -1,15 +1,9 @@
 # ==========================================================
-
 # JassMusic
-
 # Copyright (c) 2026 Jass
-
 # Proprietary Software. Unauthorized copying, modification, distribution, or resale of this source code is strictly prohibited.
-
 # Developed by Jass (Jaskaran Singh)
-
 # © 2026 All Rights Reserved.
-
 # ==========================================================
 
 import os
@@ -21,7 +15,8 @@ from pyrogram import filters
 from pyrogram.handlers import MessageHandler
 
 from ..core.logger import action_log, error_log
-
+from ..helpers.premium import render
+from pyrogram.enums import ParseMode
 
 def temp_path(prefix: str):
     return os.path.join(tempfile.gettempdir(), f"{prefix}_%(id)s.%(ext)s")
@@ -139,52 +134,77 @@ def safe_remove(path: str):
         pass
 
 
+async def premium_reply(message, text: str):
+    return await message.reply_text(
+        render(text),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def premium_edit(message, text: str):
+    return await message.edit_text(
+        render(text),
+        parse_mode=ParseMode.HTML,
+    )
+
+
 def register(app, call):
 
     async def song(client, message):
         if len(message.command) < 2:
-            return await message.reply_text(
-                "<blockquote><b>⬇️ Song Download — Usage</b></blockquote>\n\n"
-                "❖ <b>/song</b> <code>[song name or URL]</code>\n"
-                "┗ Downloads and sends the audio file.\n\n"
-                "<blockquote>♫ Supports YouTube, SoundCloud and more.</blockquote>"
+            return await premium_reply(
+                message,
+                ":download: <b>Song Download Usage</b>\n\n"
+                "<blockquote>"
+                ":music: <b>/song</b> <code>[song name or URL]</code>\n"
+                ":success: Downloads and sends the audio file.\n\n"
+                "Supports YouTube, SoundCloud and more."
+                "</blockquote>",
             )
 
         query = " ".join(message.command[1:])
-        status = await message.reply_text(
-            f"<blockquote><b>⬇️ Downloading Audio</b></blockquote>\n\n"
-            f"❖ <b>Query :</b> <code>{query}</code>\n"
-            f"❖ <b>Status :</b> <i>Fetching track...</i>"
+        status = await premium_reply(
+            message,
+            f":download: <b>Downloading Audio</b>\n\n"
+            f"<blockquote>"
+            f":search: <b>Query:</b> <code>{query}</code>\n"
+            f":settings: <b>Status:</b> <i>Fetching track...</i>"
+            f"</blockquote>",
         )
 
         file = None
 
         try:
-            await action_log("⬇️ Song Download", message)
+            await action_log("Song Download", message)
             info = await download_media(query, _AUDIO_OPTS)
             file = info["file"]
 
             await status.delete()
             me = await client.get_me()
             bot_name = me.first_name
+
             await message.reply_audio(
                 audio=file,
                 title=info["title"],
                 performer=info["uploader"],
                 duration=info["duration_sec"],
-                caption=(
-                    f"<blockquote><b>🎵 {info['title']}</b></blockquote>\n\n"
-                    f"❖ <b>Duration :</b> <code>{info['duration']}</code>\n"
-                    f"❖ <b>Artist :</b> {info['uploader']}\n\n"
-                    f"<blockquote>♫ Downloaded via {bot_name}</blockquote>"
+                caption=render(
+                    f":music: <b>{info['title']}</b>\n\n"
+                    f"<blockquote>"
+                    f":time: <b>Duration:</b> <code>{info['duration']}</code>\n"
+                    f":profile: <b>Artist:</b> {info['uploader']}\n\n"
+                    f"Downloaded via {bot_name}"
+                    f"</blockquote>"
                 ),
+                parse_mode=ParseMode.HTML,
             )
 
         except Exception as e:
             await error_log("Song Download", e)
-            await status.edit_text(
-                f"<blockquote><b>❌ Download Failed</b></blockquote>\n\n"
-                f"❖ <b>Error :</b> <code>{e}</code>"
+            await premium_edit(
+                status,
+                f":error: <b>Download Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
             )
 
         finally:
@@ -192,24 +212,30 @@ def register(app, call):
 
     async def video(client, message):
         if len(message.command) < 2:
-            return await message.reply_text(
-                "<blockquote><b>🎬 Video Download — Usage</b></blockquote>\n\n"
-                "❖ <b>/video</b> <code>[video name or URL]</code>\n"
-                "┗ Downloads and sends a video file.\n\n"
-                "<blockquote>♫ Capped at 720p for Telegram limits.</blockquote>"
+            return await premium_reply(
+                message,
+                ":video: <b>Video Download Usage</b>\n\n"
+                "<blockquote>"
+                ":video: <b>/video</b> <code>[video name or URL]</code>\n"
+                ":success: Downloads and sends a video file.\n\n"
+                "Capped at 720p for Telegram limits."
+                "</blockquote>",
             )
 
         query = " ".join(message.command[1:])
-        status = await message.reply_text(
-            f"<blockquote><b>🎬 Downloading Video</b></blockquote>\n\n"
-            f"❖ <b>Query :</b> <code>{query}</code>\n"
-            f"❖ <b>Status :</b> <i>Fetching video...</i>"
+        status = await premium_reply(
+            message,
+            f":video: <b>Downloading Video</b>\n\n"
+            f"<blockquote>"
+            f":search: <b>Query:</b> <code>{query}</code>\n"
+            f":settings: <b>Status:</b> <i>Fetching video...</i>"
+            f"</blockquote>",
         )
 
         file = None
 
         try:
-            await action_log("🎬 Video Download", message)
+            await action_log("Video Download", message)
             info = await download_media(query, _VIDEO_OPTS)
             file = info["file"]
 
@@ -217,30 +243,36 @@ def register(app, call):
                 raise Exception("Downloaded file not found.")
 
             if os.path.getsize(file) > 2_000_000_000:
-                await status.edit_text(
-                    "<blockquote><b>❌ File Too Large</b></blockquote>\n\n"
-                    "The video exceeds Telegram's 2 GB file size limit."
+                await premium_edit(
+                    status,
+                    ":error: <b>File Too Large</b>\n\n"
+                    "<blockquote>The video exceeds Telegram's 2 GB file size limit.</blockquote>",
                 )
                 return
 
             await status.delete()
             me = await client.get_me()
             bot_name = me.first_name
+
             await message.reply_video(
                 video=file,
-                caption=(
-                    f"<blockquote><b>🎬 {info['title']}</b></blockquote>\n\n"
-                    f"❖ <b>Duration :</b> <code>{info['duration']}</code>\n"
-                    f"❖ <b>Channel :</b> {info['uploader']}\n\n"
-                    f"<blockquote>♫ Downloaded via {bot_name}</blockquote>"
+                caption=render(
+                    f":video: <b>{info['title']}</b>\n\n"
+                    f"<blockquote>"
+                    f":time: <b>Duration:</b> <code>{info['duration']}</code>\n"
+                    f":profile: <b>Channel:</b> {info['uploader']}\n\n"
+                    f"Downloaded via {bot_name}"
+                    f"</blockquote>"
                 ),
+                parse_mode=ParseMode.HTML,
             )
 
         except Exception as e:
             await error_log("Video Download", e)
-            await status.edit_text(
-                f"<blockquote><b>❌ Download Failed</b></blockquote>\n\n"
-                f"❖ <b>Error :</b> <code>{e}</code>"
+            await premium_edit(
+                status,
+                f":error: <b>Download Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
             )
 
         finally:
@@ -248,43 +280,56 @@ def register(app, call):
 
     async def thumbnail(client, message):
         if len(message.command) < 2:
-            return await message.reply_text(
-                "<blockquote><b>🖼 Thumbnail — Usage</b></blockquote>\n\n"
-                "❖ <b>/thumbnail</b> <code>[YouTube URL or name]</code>\n"
-                "┗ Fetches the video thumbnail."
+            return await premium_reply(
+                message,
+                ":thumb: <b>Thumbnail Usage</b>\n\n"
+                "<blockquote>"
+                ":thumb: <b>/thumbnail</b> <code>[YouTube URL or name]</code>\n"
+                ":success: Fetches the video thumbnail."
+                "</blockquote>",
             )
 
         query = " ".join(message.command[1:])
-        status = await message.reply_text(
-            f"<blockquote><b>🖼 Fetching Thumbnail</b></blockquote>\n\n"
-            f"❖ <b>Query :</b> <code>{query}</code>"
+        status = await premium_reply(
+            message,
+            f":thumb: <b>Fetching Thumbnail</b>\n\n"
+            f"<blockquote>:search: <b>Query:</b> <code>{query}</code></blockquote>",
         )
 
         try:
-            await action_log("🖼 Thumbnail", message)
+            await action_log("Thumbnail", message)
             info = await fetch_thumbnail(query)
 
             if not info["thumbnail"]:
-                return await status.edit_text("No thumbnail found.")
+                return await premium_edit(
+                    status,
+                    ":warning: <b>No Thumbnail Found</b>\n\n"
+                    "<blockquote>No thumbnail was found for this query.</blockquote>",
+                )
 
             await status.delete()
             me = await client.get_me()
             bot_name = me.first_name
+
             await message.reply_photo(
                 photo=info["thumbnail"],
-                caption=(
-                    f"<blockquote><b>🖼 {info['title']}</b></blockquote>\n\n"
-                    f"❖ <b>Duration :</b> <code>{info['duration']}</code>\n"
-                    f"❖ <b>Channel :</b> {info['uploader']}\n\n"
-                    f"<blockquote>♫ Fetched via {bot_name}</blockquote>"
+                caption=render(
+                    f":thumb: <b>{info['title']}</b>\n\n"
+                    f"<blockquote>"
+                    f":time: <b>Duration:</b> <code>{info['duration']}</code>\n"
+                    f":profile: <b>Channel:</b> {info['uploader']}\n\n"
+                    f"Fetched via {bot_name}"
+                    f"</blockquote>"
                 ),
+                parse_mode=ParseMode.HTML,
             )
 
         except Exception as e:
             await error_log("Thumbnail Command", e)
-            await status.edit_text(
-                f"<blockquote><b>❌ Thumbnail Failed</b></blockquote>\n\n"
-                f"❖ <b>Error :</b> <code>{e}</code>"
+            await premium_edit(
+                status,
+                f":error: <b>Thumbnail Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
             )
 
     app.add_handler(MessageHandler(song, filters.command("song")))

@@ -1,15 +1,9 @@
 # ==========================================================
-
 # JassMusic
-
 # Copyright (c) 2026 Jass
-
 # Proprietary Software. Unauthorized copying, modification, distribution, or resale of this source code is strictly prohibited.
-
 # Developed by Jass (Jaskaran Singh)
-
 # © 2026 All Rights Reserved.
-
 # ==========================================================
 
 import asyncio
@@ -26,9 +20,11 @@ from pyrogram.errors import (
     FloodWait,
     PeerIdInvalid,
 )
-
+from pyrogram.enums import ParseMode
 from .. import assistant
 from ..core.logger import action_log, error_log
+from ..helpers.premium import render
+from ..helpers.buttons import pbtn
 
 
 UPDATES_URL = "https://t.me/Xenoraorg"
@@ -38,12 +34,22 @@ def _updates_button():
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
+                pbtn(
                     "Updates",
                     url=UPDATES_URL,
+                    icon_name="updates",
+                    style="primary",
                 )
             ]
         ]
+    )
+
+
+async def _premium_reply(message, text: str, **kwargs):
+    return await message.reply_text(
+        render(text),
+        parse_mode=ParseMode.HTML,
+        **kwargs,
     )
 
 
@@ -76,30 +82,29 @@ async def _try_join(invite_link: str) -> tuple[bool, str]:
 
 
 def _ready_text(bot_name: str, chat_title: str):
-    return f"""<blockquote><b>{bot_name}</b></blockquote>
-
-Thanks for adding me to <b>{chat_title}</b>! 🎶
-
-✅ Assistant is connected automatically.
-✅ Music system is ready.
-✅ Voice chat streaming is enabled.
-
-<blockquote>♫ Start a voice chat and use /play to begin streaming.</blockquote>"""
+    return (
+        f":bot: <b>{bot_name}</b>\n\n"
+        f"<blockquote>"
+        f":success: Thanks for adding me to <b>{chat_title}</b>.\n\n"
+        f":active: <b>Assistant:</b> Connected automatically\n"
+        f":music: <b>Music System:</b> Ready\n"
+        f":play: <b>Voice Streaming:</b> Enabled\n\n"
+        f"Start a voice chat and use /play to begin streaming."
+        f"</blockquote>"
+    )
 
 
 def _needs_permission_text(bot_name: str, chat_title: str, reason: str):
-    return f"""<blockquote><b>{bot_name}</b></blockquote>
-
-Thanks for adding me to <b>{chat_title}</b>! 🎶
-
-⚠️ I tried to connect my assistant automatically, but it could not join yet.
-
-<b>Required bot permission:</b>
-❖ Invite Users / Add Members
-
-<b>Reason:</b> <code>{reason}</code>
-
-<blockquote>Give me invite permission, then send /start again in this group.</blockquote>"""
+    return (
+        f":bot: <b>{bot_name}</b>\n\n"
+        f"<blockquote>"
+        f":warning: Thanks for adding me to <b>{chat_title}</b>.\n\n"
+        f"I tried to connect my assistant automatically, but it could not join yet.\n\n"
+        f":settings: <b>Required Permission:</b> Invite Users / Add Members\n"
+        f":warning: <b>Reason:</b> <code>{reason}</code>\n\n"
+        f"Give me invite permission, then send /start again in this group."
+        f"</blockquote>"
+    )
 
 
 def register(app, call):
@@ -116,7 +121,7 @@ def register(app, call):
             if me.id not in added_ids:
                 return
 
-            await action_log("➕ Bot Added To Group", message)
+            await action_log("Bot Added To Group", message)
 
             chat = message.chat
             chat_id = chat.id
@@ -126,7 +131,8 @@ def register(app, call):
             already_present = await _is_assistant_in_group(chat_id)
 
             if already_present:
-                await message.reply_text(
+                await _premium_reply(
+                    message,
                     _ready_text(bot_name, chat_title),
                     reply_markup=_updates_button(),
                 )
@@ -135,7 +141,8 @@ def register(app, call):
             try:
                 invite_link = await client.export_chat_invite_link(chat_id)
             except ChatAdminRequired:
-                await message.reply_text(
+                await _premium_reply(
+                    message,
                     _needs_permission_text(
                         bot_name,
                         chat_title,
@@ -146,7 +153,8 @@ def register(app, call):
                 return
             except Exception as e:
                 await error_log("Export Invite Link", e)
-                await message.reply_text(
+                await _premium_reply(
+                    message,
                     _needs_permission_text(
                         bot_name,
                         chat_title,
@@ -159,13 +167,15 @@ def register(app, call):
             success, reason = await _try_join(invite_link)
 
             if success:
-                await message.reply_text(
+                await _premium_reply(
+                    message,
                     _ready_text(bot_name, chat_title),
                     reply_markup=_updates_button(),
                 )
                 return
 
-            await message.reply_text(
+            await _premium_reply(
+                message,
                 _needs_permission_text(
                     bot_name,
                     chat_title,

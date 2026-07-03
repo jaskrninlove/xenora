@@ -10,3 +10,6 @@ psutil
 spotipy
 dnspython
 py-yt-search
+pytubefix
+python-telegram-bot[job-queue]==21.6
+PyYAML

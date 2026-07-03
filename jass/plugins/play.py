@@ -1,15 +1,9 @@
 # ==========================================================
-
 # JassMusic
-
 # Copyright (c) 2026 Jass
-
 # Proprietary Software. Unauthorized copying, modification, distribution, or resale of this source code is strictly prohibited.
-
 # Developed by Jass (Jaskaran Singh)
-
 # © 2026 All Rights Reserved.
-
 # ==========================================================
 
 from pyrogram import filters
@@ -25,9 +19,26 @@ from ..core.player import (
 from ..core.queue import queue
 from ..core.logger import play_command_log, action_log, error_log
 from ..helpers.buttons import player_close_button
-
+from ..helpers.premium import render
+from pyrogram.enums import ParseMode
 
 LOADING_STICKER = ""  # add real sticker file_id here
+
+
+async def premium_reply(message, text: str, **kwargs):
+    return await message.reply_text(
+        render(text),
+        parse_mode=ParseMode.HTML,
+        **kwargs,
+    )
+
+
+async def premium_edit(message, text: str, **kwargs):
+    return await message.edit_text(
+        render(text),
+        parse_mode=ParseMode.HTML,
+        **kwargs,
+    )
 
 
 def register(app, call):
@@ -35,7 +46,15 @@ def register(app, call):
 
     async def play(client, message):
         if len(message.command) < 2:
-            return await message.reply_text("Use: /play song name or link")
+            return await premium_reply(
+                message,
+                ":music: <b>Play Usage</b>\n\n"
+                "<blockquote>"
+                ":play: <b>/play</b> <code>[song name or link]</code>\n"
+                ":video: <b>/vplay</b> <code>[video name or link]</code>\n\n"
+                "Send a song name or link to start streaming."
+                "</blockquote>",
+            )
 
         query = " ".join(message.command[1:])
 
@@ -54,7 +73,12 @@ def register(app, call):
             if LOADING_STICKER:
                 loading = await message.reply_sticker(LOADING_STICKER)
             else:
-                loading = await message.reply_text("🦄")
+                loading = await premium_reply(
+                    message,
+                    ":rocket: <b>Preparing Stream</b>\n\n"
+                    f"<blockquote>:search: <b>Query:</b> <code>{query}</code>\n"
+                    ":music: Searching and loading your track...</blockquote>",
+                )
         except Exception:
             loading = None
 
@@ -75,68 +99,107 @@ def register(app, call):
                 except Exception:
                     pass
 
-            await message.reply_text(f"Play failed: <code>{e}</code>")
+            await premium_reply(
+                message,
+                f":error: <b>Play Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
+            )
 
     async def skip(client, message):
         try:
-            await action_log("⏭ Skip Command", message)
+            await action_log("Skip Command", message)
             await skip_track(client, call, message.chat.id, message)
         except Exception as e:
             await error_log("Skip Command", e)
-            await message.reply_text(f"Skip failed: <code>{e}</code>")
+            await premium_reply(
+                message,
+                f":error: <b>Skip Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
+            )
 
     async def end(client, message):
         try:
-            await action_log("⏹ End Command", message)
+            await action_log("End Command", message)
             await stop_track(call, message.chat.id)
 
             user = message.from_user.mention if message.from_user else "Unknown"
 
-            await message.reply_text(
-                f"""<blockquote><b>𐙚 Stream Stopped 𐙚</b></blockquote>
- |               
-└ <b>By :</b> {user} .🕸️
-
-<blockquote><b>♫ Music playback has been terminated and the assistant has left the voice chat.</b></blockquote>""",
+            await premium_reply(
+                message,
+                f":stop: <b>Stream Stopped</b>\n\n"
+                f"<blockquote>"
+                f":profile: <b>Stopped By:</b> {user}\n\n"
+                f":music: Music playback has been terminated and the assistant has left the voice chat."
+                f"</blockquote>",
                 reply_markup=player_close_button(),
             )
 
         except Exception as e:
             await error_log("End Command", e)
-            await message.reply_text(f"<b>Stop failed:</b>\n<code>{e}</code>")
+            await premium_reply(
+                message,
+                f":error: <b>Stop Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
+            )
 
     async def q(client, message):
         try:
             items = queue.list(message.chat.id)
 
             if not items:
-                return await message.reply_text(
-                    "<blockquote><b>𐙚 Queue Empty 𐙚</b></blockquote>\n\n"
-                    "No tracks are waiting in the queue."
+                return await premium_reply(
+                    message,
+                    ":queue: <b>Queue Empty</b>\n\n"
+                    "<blockquote>No tracks are waiting in the queue.</blockquote>",
                 )
 
-            text = "<blockquote><b>𐙚 Current Queue 𐙚</b></blockquote>\n\n"
-            text += "\n".join(
-                f"❖ <b>{i + 1}.</b> {getattr(t, 'title', 'Unknown Track')}"
+            lines = [
+                f":music: <b>{i + 1}.</b> {getattr(t, 'title', 'Unknown Track')}"
                 for i, t in enumerate(items)
-            )
+            ]
 
-            await message.reply_text(text)
+            await premium_reply(
+                message,
+                ":queue: <b>Current Queue</b>\n\n"
+                "<blockquote>"
+                + "\n".join(lines)
+                + "</blockquote>",
+            )
 
         except Exception as e:
             await error_log("Queue Command", e)
-            await message.reply_text(f"Queue failed: <code>{e}</code>")
+            await premium_reply(
+                message,
+                f":error: <b>Queue Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
+            )
 
     async def activevc(client, message):
         try:
-            await action_log("🎧 Active VC Command", message)
-            text = "\n".join(str(x) for x in active.keys()) or "No active VC."
-            await message.reply_text(
-                f"<blockquote><b>🎧 Active Voice Chats</b></blockquote>\n\n<code>{text}</code>"
+            await action_log("Active VC Command", message)
+
+            if not active:
+                return await premium_reply(
+                    message,
+                    ":active: <b>Active Voice Chats</b>\n\n"
+                    "<blockquote>No active voice chats right now.</blockquote>",
+                )
+
+            text = "\n".join(f":music: <code>{chat_id}</code>" for chat_id in active.keys())
+
+            await premium_reply(
+                message,
+                ":active: <b>Active Voice Chats</b>\n\n"
+                f"<blockquote>{text}</blockquote>",
             )
+
         except Exception as e:
             await error_log("ActiveVC Command", e)
-            await message.reply_text(f"ActiveVC failed: <code>{e}</code>")
+            await premium_reply(
+                message,
+                f":error: <b>ActiveVC Failed</b>\n\n"
+                f"<blockquote>:warning: <b>Error:</b> <code>{e}</code></blockquote>",
+            )
 
     async def cb(client, cq):
         try:
@@ -146,8 +209,9 @@ def register(app, call):
 
             elif cq.data == "stop":
                 await stop_track(call, cq.message.chat.id)
-                await cq.message.edit_text(
-                    "<blockquote><b>𐙚 Stream Stopped 𐙚</b></blockquote>",
+                await premium_edit(
+                    cq.message,
+                    ":stop: <b>Stream Stopped</b>",
                     reply_markup=player_close_button(),
                 )
                 await cq.answer("Stopped")
@@ -161,13 +225,13 @@ def register(app, call):
                 await cq.answer("Resumed")
 
             elif cq.data == "replay":
-                await cq.answer("Replay coming soon ♫", show_alert=False)
+                await cq.answer("Replay coming soon", show_alert=False)
 
             elif cq.data == "delete_player":
                 await cq.message.delete()
 
             elif cq.data in ["progress", "status"]:
-                await cq.answer("Streaming is active ♫", show_alert=False)
+                await cq.answer("Streaming is active", show_alert=False)
 
             else:
                 await cq.answer()
