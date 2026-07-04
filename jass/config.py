@@ -22,6 +22,7 @@ class Config:
     BOT_TOKEN = os.getenv("BOT_TOKEN", "")
     SESSION_STRING = os.getenv("SESSION_STRING", "")
     MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://ChatSphereDB:RadheyMaa@chatspheredb.shxwz5d.mongodb.net/?retryWrites=true&w=majority")
+    MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "JassCore")
     OWNER_ID = int(os.getenv("OWNER_ID", "0"))
     LOGGER_CHAT_ID = int(os.getenv("LOGGER_CHAT_ID", "0"))
     START_IMG = os.getenv("START_IMG", "https://i.pinimg.com/736x/59/90/3a/59903a0d021a27d55a86b507ec329f17.jpg")
