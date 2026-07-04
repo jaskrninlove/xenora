@@ -26,7 +26,7 @@ class Database:
         if self.db is not None:
             return
         self.client = AsyncIOMotorClient(config.MONGO_URI)
-        self.db = self.client.JassMusic
+        self.db = self.client[config.MONGO_DB_NAME]
         await self.client.admin.command("ping")
 
     # ── Users ─────────────────────────────────────────────────────────────────
