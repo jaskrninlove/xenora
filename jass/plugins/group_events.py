@@ -24,7 +24,6 @@ from pyrogram.enums import ParseMode
 from .. import assistant
 from ..core.logger import action_log, error_log
 from ..helpers.premium import render
-from ..helpers.buttons import pbtn
 
 
 UPDATES_URL = "https://t.me/Xenoraorg"
@@ -34,11 +33,9 @@ def _updates_button():
     return InlineKeyboardMarkup(
         [
             [
-                pbtn(
-                    "Updates",
+                InlineKeyboardButton(
+                    "🔗 Updates",
                     url=UPDATES_URL,
-                    icon_name="updates",
-                    style="primary",
                 )
             ]
         ]
