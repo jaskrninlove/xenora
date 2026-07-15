@@ -68,6 +68,28 @@ def stream(track):
     )
 
 
+async def safe_play(call, chat_id: int, media):
+    """Join/play with self-healing: if PyTgCalls' cached call state is stale
+    (e.g. the voice chat was ended/restarted outside the bot, or the bot's
+    own leave_call failed silently), force a clean leave and retry once
+    before giving up."""
+    try:
+        await call.play(chat_id, media)
+    except Exception as e:
+        err = str(e)
+
+        if "GROUPCALL_INVALID" in err or "GroupcallInvalid" in err:
+            try:
+                await call.leave_call(chat_id)
+            except Exception:
+                pass
+
+            await asyncio.sleep(1)
+            await call.play(chat_id, media)
+        else:
+            raise
+
+
 async def premium_reply(message, text: str, **kwargs):
     kwargs.pop("parse_mode", None)
     return await message.reply_text(
@@ -327,7 +349,7 @@ async def play_query(client, call, message, query: str, video: bool = False):
         return await send_queue_ui(message, track, pos)
 
     try:
-        await call.play(chat_id, stream(track))
+        await safe_play(call, chat_id, stream(track))
 
     except Exception as e:
         err = str(e)
@@ -336,6 +358,8 @@ async def play_query(client, call, message, query: str, video: bool = False):
             "CHAT_ADMIN_REQUIRED" in err
             or "CreateGroupCall" in err
             or "phone.CreateGroupCall" in err
+            or "GROUPCALL_INVALID" in err
+            or "GroupcallInvalid" in err
         ):
             return await premium_reply(
                 message,
@@ -354,7 +378,7 @@ async def play_next_from_queue(client, call, chat_id: int, message=None):
         current_track = active.get(chat_id)
 
         if current_track:
-            await call.play(chat_id, stream(current_track))
+            await safe_play(call, chat_id, stream(current_track))
             await start_track_tasks(client, call, chat_id, current_track)
             return
 
@@ -373,7 +397,7 @@ async def play_next_from_queue(client, call, chat_id: int, message=None):
 
         return
 
-    await call.play(chat_id, stream(next_track))
+    await safe_play(call, chat_id, stream(next_track))
     active[chat_id] = next_track
 
     if message:
